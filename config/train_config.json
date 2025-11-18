@@ -1,0 +1,49 @@
+{
+  "model": {
+    "type": "LSTM",
+    "hidden_dim": 256,
+    "num_layers": 3,
+    "dropout": 0.2,
+    "bidirectional": false
+  },
+  "training": {
+    "lr": 3e-4,
+    "weight_decay": 1e-5,
+    "batch_size": 128,
+    "epochs": 100,
+    "lambda_reg": 0.1,
+    "early_stop_patience": 10,
+    "seed": 42,
+    "use_amp": true,
+    "min_lr": 1e-6
+  },
+  "data": {
+    "symbol": "BTCUSDT",
+    "timeframe": "5m",
+    "seq_len": 128,
+    "horizon": 1,
+    "buy_threshold": 0.005,
+    "sell_threshold": -0.005,
+    "train_start": "2022-01-01",
+    "train_end": "2023-06-01",
+    "val_start": "2023-06-01",
+    "val_end": "2023-12-01",
+    "test_start": "2023-12-01",
+    "test_end": "2024-06-01"
+  },
+  "features": {
+    "normalize": true,
+    "use_volume": true,
+    "use_technical_indicators": true
+  },
+  "backtest": {
+    "initial_capital": 10000.0,
+    "taker_fee": 0.001,
+    "maker_fee": 0.0005,
+    "slippage_pct": 0.0005,
+    "max_position_size": 1.0,
+    "stop_loss_pct": 0.02,
+    "take_profit_pct": 0.05
+  }
+}
+
