@@ -19,6 +19,7 @@ sys.path.append(str(Path(__file__).parent))
 from src.data.binance_downloader import BinanceDataDownloader
 from src.features.feature_builder import FeatureBuilder
 from src.models.lstm_signal_net import LSTMSignalNet, CNNLSTMSignalNet
+from src.models.transformer_signal_net import TransformerSignalNet, AttentionLSTMNet
 from src.training.train import train_model
 from src.training.walk_forward import create_time_based_splits
 from src.backtest.backtester import Backtester, Signal
@@ -194,7 +195,7 @@ def main():
                        help='Force download fresh data')
     parser.add_argument('--backtest', action='store_true',
                        help='Run backtest after training')
-    parser.add_argument('--model-type', type=str, choices=['LSTM', 'CNN-LSTM'],
+    parser.add_argument('--model-type', type=str, choices=['LSTM', 'CNN-LSTM', 'Transformer', 'Attention-LSTM'],
                        default='LSTM', help='Model architecture')
     
     args = parser.parse_args()
@@ -216,7 +217,16 @@ def main():
      feature_builder) = prepare_data(df, config)
     
     # Select model
-    model_class = LSTMSignalNet if args.model_type == 'LSTM' else CNNLSTMSignalNet
+    if args.model_type == 'LSTM':
+        model_class = LSTMSignalNet
+    elif args.model_type == 'CNN-LSTM':
+        model_class = CNNLSTMSignalNet
+    elif args.model_type == 'Transformer':
+        model_class = TransformerSignalNet
+    elif args.model_type == 'Attention-LSTM':
+        model_class = AttentionLSTMNet
+    else:
+        model_class = LSTMSignalNet
     
     # Training config
     train_config = {

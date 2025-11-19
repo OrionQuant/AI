@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OrionQuant - AI Trading Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1 class="logo">🚀 OrionQuant</h1>
+                <div class="header-actions">
+                    <div class="status-indicator" id="statusIndicator">
+                        <span class="status-dot"></span>
+                        <span id="statusText">Connecting...</span>
+                    </div>
+                    <button class="btn btn-primary" id="refreshBtn">Refresh</button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Dashboard -->
+        <main class="dashboard">
+            <!-- Prediction Card -->
+            <section class="card prediction-card">
+                <div class="card-header">
+                    <h2>Real-Time Prediction</h2>
+                    <select id="symbolSelect" class="select-input">
+                        <option value="BTCUSDT">BTC/USDT</option>
+                        <option value="ETHUSDT">ETH/USDT</option>
+                    </select>
+                </div>
+                <div class="prediction-content">
+                    <div class="signal-display" id="signalDisplay">
+                        <div class="signal-icon" id="signalIcon">⏳</div>
+                        <div class="signal-text">
+                            <h3 id="signalText">Loading...</h3>
+                            <p class="confidence" id="confidenceText">Confidence: --</p>
+                        </div>
+                    </div>
+                    <div class="prediction-details">
+                        <div class="detail-item">
+                            <span class="label">Expected Return</span>
+                            <span class="value" id="expectedReturn">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="label">Current Price</span>
+                            <span class="value" id="currentPrice">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="label">Timestamp</span>
+                            <span class="value" id="timestamp">--</span>
+                        </div>
+                    </div>
+                    <div class="probability-bars">
+                        <div class="prob-item">
+                            <div class="prob-label">
+                                <span>BUY</span>
+                                <span id="buyProb">0%</span>
+                            </div>
+                            <div class="prob-bar">
+                                <div class="prob-fill buy" id="buyBar" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        <div class="prob-item">
+                            <div class="prob-label">
+                                <span>HOLD</span>
+                                <span id="holdProb">0%</span>
+                            </div>
+                            <div class="prob-bar">
+                                <div class="prob-fill hold" id="holdBar" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        <div class="prob-item">
+                            <div class="prob-label">
+                                <span>SELL</span>
+                                <span id="sellProb">0%</span>
+                            </div>
+                            <div class="prob-bar">
+                                <div class="prob-fill sell" id="sellBar" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Price Chart -->
+            <section class="card chart-card">
+                <div class="card-header">
+                    <h2>Price Chart</h2>
+                    <select id="timeframeSelect" class="select-input">
+                        <option value="5m">5m</option>
+                        <option value="15m">15m</option>
+                        <option value="1h">1h</option>
+                        <option value="4h">4h</option>
+                        <option value="1d">1d</option>
+                    </select>
+                </div>
+                <div class="chart-container">
+                    <canvas id="priceChart"></canvas>
+                </div>
+            </section>
+
+            <!-- Backtest Section -->
+            <section class="card backtest-card">
+                <div class="card-header">
+                    <h2>Backtest</h2>
+                    <button class="btn btn-secondary" id="runBacktestBtn">Run Backtest</button>
+                </div>
+                <div class="backtest-controls">
+                    <div class="control-group">
+                        <label>Start Date</label>
+                        <input type="date" id="backtestStartDate" class="date-input" value="2023-12-01">
+                    </div>
+                    <div class="control-group">
+                        <label>End Date</label>
+                        <input type="date" id="backtestEndDate" class="date-input">
+                    </div>
+                </div>
+                <div class="backtest-results" id="backtestResults" style="display: none;">
+                    <div class="metrics-grid">
+                        <div class="metric-card">
+                            <div class="metric-label">Total Return</div>
+                            <div class="metric-value" id="totalReturn">--</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Sharpe Ratio</div>
+                            <div class="metric-value" id="sharpeRatio">--</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Win Rate</div>
+                            <div class="metric-value" id="winRate">--</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Profit Factor</div>
+                            <div class="metric-value" id="profitFactor">--</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Max Drawdown</div>
+                            <div class="metric-value" id="maxDrawdown">--</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Number of Trades</div>
+                            <div class="metric-value" id="numTrades">--</div>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="equityChart"></canvas>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
+

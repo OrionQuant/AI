@@ -6,11 +6,15 @@ A production-ready framework for building, training, validating, and deploying B
 
 - **Data Collection**: Automated Binance data downloader with multi-timeframe support
 - **Feature Engineering**: Comprehensive technical indicators and normalized features
-- **Model Architectures**: LSTM and CNN-LSTM models for sequence prediction
+- **Advanced Model Architectures**: 
+  - LSTM and CNN-LSTM models
+  - **Transformer-based model** with multi-head attention (NEW!)
+  - **Attention-LSTM** hybrid model (NEW!)
 - **Multi-task Learning**: Simultaneous classification (BUY/HOLD/SELL) and regression (expected return)
 - **Walk-Forward Validation**: Time-series cross-validation to prevent lookahead bias
 - **Realistic Backtesting**: Includes slippage, fees, stop-loss, and take-profit
 - **Performance Metrics**: Sharpe ratio, profit factor, max drawdown, win rate
+- **Modern Web UI**: Beautiful dashboard with real-time predictions, charts, and backtesting (NEW!)
 
 ## 📋 Requirements
 
@@ -76,6 +80,12 @@ python train_main.py --backtest
 
 # Train CNN-LSTM model
 python train_main.py --model-type CNN-LSTM --backtest
+
+# Train Transformer model (most powerful)
+python train_main.py --model-type Transformer --backtest
+
+# Train Attention-LSTM model
+python train_main.py --model-type Attention-LSTM --backtest
 
 # Use custom config
 python train_main.py --config config/my_config.json
@@ -262,11 +272,36 @@ The backtester includes:
 
 **Important**: Always test on paper trading/testnet before live deployment!
 
+## 🌐 Web UI
+
+OrionQuant now includes a modern web interface! See `WEB_UI_GUIDE.md` for details.
+
+**Quick Start:**
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Train a model (optional if you already have one)
+python train_main.py --model-type Transformer --backtest
+
+# Start web server
+python app.py
+```
+
+Then open **http://localhost:5000** in your browser.
+
+**Features:**
+- Real-time trading signal predictions
+- Interactive price charts
+- Backtest visualization
+- Performance metrics dashboard
+- Multiple model architecture support
+
 ## 🚧 Roadmap
 
-- [ ] Transformer-based model architecture
+- [x] Transformer-based model architecture
 - [ ] Optuna hyperparameter optimization script
-- [ ] Real-time inference service
+- [x] Real-time inference service (Web UI)
 - [ ] Integration with Binance API for live trading
 - [ ] Advanced orderbook features
 - [ ] Multi-asset support
