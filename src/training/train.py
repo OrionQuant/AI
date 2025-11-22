@@ -199,14 +199,36 @@ def train_model(X_train, y_train_cls, y_train_reg,
         pin_memory=True if device.type == 'cuda' else False
     )
     
-    # Create model
-    model = model_class(
-        input_dim=X_train.shape[2],
-        hidden_dim=config['hidden_dim'],
-        num_layers=config['num_layers'],
-        dropout=config['dropout'],
-        num_classes=3
-    ).to(device)
+    # Create model - handle different architectures with different parameter names
+    model_name = model_class.__name__
+    
+    if model_name == 'TransformerSignalNet':
+        # Transformer uses d_model instead of hidden_dim
+        model = model_class(
+            input_dim=X_train.shape[2],
+            d_model=config['hidden_dim'],
+            num_layers=config['num_layers'],
+            dropout=config['dropout'],
+            num_classes=3
+        ).to(device)
+    elif model_name == 'AttentionLSTMNet':
+        # Attention-LSTM uses same params as LSTM
+        model = model_class(
+            input_dim=X_train.shape[2],
+            hidden_dim=config['hidden_dim'],
+            num_layers=config['num_layers'],
+            dropout=config['dropout'],
+            num_classes=3
+        ).to(device)
+    else:
+        # LSTM and CNN-LSTM use standard params
+        model = model_class(
+            input_dim=X_train.shape[2],
+            hidden_dim=config['hidden_dim'],
+            num_layers=config['num_layers'],
+            dropout=config['dropout'],
+            num_classes=3
+        ).to(device)
     
     logger.info(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
     
@@ -224,7 +246,28 @@ def train_model(X_train, y_train_cls, y_train_reg,
         eta_min=config.get('min_lr', 1e-6)
     )
     
-    loss_fn_cls = nn.CrossEntropyLoss()
+    # Calculate class weights to handle imbalance
+    # Count class frequencies
+    y_train_cls_np = np.array(y_train_cls)
+    class_counts = np.bincount(y_train_cls_np, minlength=3)
+    total_samples = len(y_train_cls_np)
+    
+    # Calculate weights: inverse frequency, but cap at reasonable values
+    class_weights = total_samples / (3.0 * class_counts + 1e-8)  # Add small epsilon to avoid division by zero
+    
+    # Normalize weights (optional, but helps stability)
+    class_weights = class_weights / class_weights.sum() * 3.0
+    
+    # Cap weights to prevent extreme values
+    class_weights = np.clip(class_weights, 0.1, 100.0)
+    
+    logger.info(f"Class distribution: BUY={class_counts[0]}, HOLD={class_counts[1]}, SELL={class_counts[2]}")
+    logger.info(f"Class weights: BUY={class_weights[0]:.2f}, HOLD={class_weights[1]:.2f}, SELL={class_weights[2]:.2f}")
+    
+    # Convert to tensor
+    class_weights_tensor = torch.FloatTensor(class_weights).to(device)
+    
+    loss_fn_cls = nn.CrossEntropyLoss(weight=class_weights_tensor)
     loss_fn_reg = nn.MSELoss()
     
     # Mixed precision scaler

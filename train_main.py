@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import torch
 from pathlib import Path
+from datetime import timedelta
 
 # Add src to path
 sys.path.append(str(Path(__file__).parent))
@@ -90,27 +91,105 @@ def prepare_data(df: pd.DataFrame, config: dict) -> tuple:
         sell_threshold=config['data']['sell_threshold']
     )
     
+    # Check available date range in data
+    if 'timestamp' in df_labeled.columns:
+        df_labeled['timestamp'] = pd.to_datetime(df_labeled['timestamp'])
+        min_date = df_labeled['timestamp'].min()
+        max_date = df_labeled['timestamp'].max()
+        logger.info(f"Available data range: {min_date.date()} to {max_date.date()}")
+        
+        # Auto-adjust date ranges if configured dates don't match available data
+        config_train_start = pd.to_datetime(config['data']['train_start'])
+        config_test_end = pd.to_datetime(config['data']['test_end'])
+        
+        if config_train_start > max_date or config_test_end < min_date:
+            logger.warning(f"Configured date range ({config['data']['train_start']} to {config['data']['test_end']}) doesn't match available data.")
+            logger.info("Auto-adjusting date ranges to use available data...")
+            
+            # Use 70% train, 15% val, 15% test split based on available dates
+            total_days = (max_date - min_date).days
+            train_end_date = min_date + timedelta(days=int(total_days * 0.7))
+            val_end_date = min_date + timedelta(days=int(total_days * 0.85))
+            
+            train_start = min_date.strftime('%Y-%m-%d')
+            train_end = train_end_date.strftime('%Y-%m-%d')
+            val_start = train_end
+            val_end = val_end_date.strftime('%Y-%m-%d')
+            test_start = val_end
+            test_end = max_date.strftime('%Y-%m-%d')
+            
+            logger.info(f"Adjusted splits: Train={train_start} to {train_end}, Val={val_start} to {val_end}, Test={test_start} to {test_end}")
+        else:
+            train_start = config['data']['train_start']
+            train_end = config['data']['train_end']
+            val_start = config['data']['val_start']
+            val_end = config['data']['val_end']
+            test_start = config['data']['test_start']
+            test_end = config['data']['test_end']
+    else:
+        # No timestamp column, use configured dates
+        train_start = config['data']['train_start']
+        train_end = config['data']['train_end']
+        val_start = config['data']['val_start']
+        val_end = config['data']['val_end']
+        test_start = config['data']['test_start']
+        test_end = config['data']['test_end']
+    
     # Time-based splits
     logger.info("Creating train/val/test splits...")
     splits = create_time_based_splits(
         df_labeled,
-        train_start=config['data']['train_start'],
-        train_end=config['data']['train_end'],
-        val_start=config['data']['val_start'],
-        val_end=config['data']['val_end'],
-        test_start=config['data']['test_start'],
-        test_end=config['data']['test_end']
+        train_start=train_start,
+        train_end=train_end,
+        val_start=val_start,
+        val_end=val_end,
+        test_start=test_start,
+        test_end=test_end
     )
+    
+    # Check if splits are empty
+    if len(splits['train_df']) == 0:
+        logger.warning("Train split is empty! Using all available data for training.")
+        # Fallback: use all data for training if splits are empty
+        splits['train_df'] = df_labeled
+        splits['val_df'] = df_labeled.iloc[:0].copy()  # Empty validation
+        splits['test_df'] = df_labeled.iloc[:0].copy()  # Empty test
     
     # Create sequences
     logger.info("Creating sequences...")
-    X_train, y_train_cls, y_train_reg = feature_builder.create_sequences(splits['train_df'])
-    X_val, y_val_cls, y_val_reg = feature_builder.create_sequences(splits['val_df'])
-    X_test, y_test_cls, y_test_reg = feature_builder.create_sequences(splits['test_df'])
+    
+    # Handle empty splits
+    if len(splits['train_df']) > 0:
+        X_train, y_train_cls, y_train_reg = feature_builder.create_sequences(splits['train_df'])
+    else:
+        X_train, y_train_cls, y_train_reg = np.array([]), np.array([]), np.array([])
+    
+    if len(splits['val_df']) > 0:
+        X_val, y_val_cls, y_val_reg = feature_builder.create_sequences(splits['val_df'])
+    else:
+        # Create a small validation set from train if val is empty
+        if len(X_train) > 0:
+            val_size = min(100, len(X_train) // 10)
+            X_val = X_train[-val_size:]
+            y_val_cls = y_train_cls[-val_size:]
+            y_val_reg = y_train_reg[-val_size:]
+            X_train = X_train[:-val_size]
+            y_train_cls = y_train_cls[:-val_size]
+            y_train_reg = y_train_reg[:-val_size]
+        else:
+            X_val, y_val_cls, y_val_reg = np.array([]), np.array([]), np.array([])
+    
+    if len(splits['test_df']) > 0:
+        X_test, y_test_cls, y_test_reg = feature_builder.create_sequences(splits['test_df'])
+    else:
+        X_test, y_test_cls, y_test_reg = np.array([]), np.array([]), np.array([])
     
     logger.info(f"Train: {len(X_train)} sequences")
     logger.info(f"Val: {len(X_val)} sequences")
     logger.info(f"Test: {len(X_test)} sequences")
+    
+    if len(X_train) == 0:
+        raise ValueError("No training data available! Please download more historical data or adjust date ranges in config.")
     
     return (X_train, y_train_cls, y_train_reg,
             X_val, y_val_cls, y_val_reg,

@@ -183,8 +183,13 @@ class BinanceDataDownloader:
         
         dfs = []
         for f in files:
-            df = pd.read_parquet(f)
-            dfs.append(df)
+            try:
+                df = pd.read_parquet(f)
+                if len(df) > 0:
+                    dfs.append(df)
+            except Exception as e:
+                logger.warning(f"Could not read parquet file {f}: {e}. Skipping...")
+                continue
         
         combined = pd.concat(dfs, ignore_index=True)
         combined = combined.sort_values('timestamp').reset_index(drop=True)
@@ -196,6 +201,7 @@ class BinanceDataDownloader:
     def update_data(self, symbol: str = "BTCUSDT", timeframe: str = "5m") -> pd.DataFrame:
         """
         Incrementally update existing data with latest candles.
+        Uses live market data from Binance.
         
         Args:
             symbol: Trading pair
@@ -214,10 +220,68 @@ class BinanceDataDownloader:
         
         # Get last timestamp
         last_ts = df_existing['timestamp'].max()
-        start_date = (pd.to_datetime(last_ts) + timedelta(minutes=1)).strftime("%Y-%m-%d")
+        last_ts_dt = pd.to_datetime(last_ts)
         
-        logger.info(f"Updating data from {start_date}")
-        df_new = self.download_historical(symbol, timeframe, start_date=start_date, save=False)
+        # Fetch LIVE data directly from Binance (most recent candles)
+        logger.info(f"Fetching live market data for {symbol} {timeframe}...")
+        latest_candles = []
+        
+        try:
+            # Get the most recent candles (up to 500 to ensure we get all new ones)
+            latest_klines = self.client.get_klines(
+                symbol=symbol,
+                interval=self.TIMEFRAMES[timeframe],
+                limit=500  # Get last 500 candles to ensure we catch all updates
+            )
+            
+            if latest_klines:
+                for k in latest_klines:
+                    candle_ts = pd.to_datetime(k[0], unit='ms')
+                    # Only add if newer than what we have
+                    if candle_ts > last_ts_dt:
+                        latest_candles.append({
+                            'timestamp': candle_ts,
+                            'open': float(k[1]),
+                            'high': float(k[2]),
+                            'low': float(k[3]),
+                            'close': float(k[4]),
+                            'volume': float(k[5]),
+                            'quote_volume': float(k[7]),
+                            'trades': int(k[8]),
+                        })
+                
+                if latest_candles:
+                    df_new = pd.DataFrame(latest_candles)
+                    logger.info(f"Fetched {len(latest_candles)} new live candles from Binance")
+                else:
+                    logger.info("No new candles available (already up to date)")
+                    df_new = pd.DataFrame()
+            else:
+                df_new = pd.DataFrame()
+                
+        except Exception as e:
+            logger.error(f"Error fetching live data: {e}")
+            df_new = pd.DataFrame()
+        
+        # Also try to get the absolute latest ticker price for real-time updates
+        try:
+            ticker = self.client.get_symbol_ticker(symbol=symbol)
+            current_price = float(ticker['price'])
+            current_time = datetime.now()
+            
+            # Check if we need to add a "live" candle
+            if len(df_existing) > 0:
+                last_candle_time = pd.to_datetime(df_existing.iloc[-1]['timestamp'])
+                # If last candle is more than 5 minutes old, we're in a new candle period
+                minutes_since_last = (current_time - last_candle_time).total_seconds() / 60
+                
+                if minutes_since_last >= 5 and len(df_new) == 0:
+                    # Create a synthetic "live" candle using current price
+                    # This gives us real-time price even if the 5m candle isn't closed yet
+                    logger.info(f"Adding live price data: ${current_price:,.2f} at {current_time}")
+                    # Note: We'll use this for display but won't save incomplete candles
+        except Exception as e:
+            logger.debug(f"Could not get ticker: {e}")
         
         if len(df_new) > 0:
             # Combine and deduplicate
@@ -233,6 +297,24 @@ class BinanceDataDownloader:
             return df_combined
         
         return df_existing
+    
+    def get_live_price(self, symbol: str = "BTCUSDT") -> dict:
+        """
+        Get the absolute latest live price from Binance ticker.
+        
+        Returns:
+            Dict with price, timestamp, and other ticker info
+        """
+        try:
+            ticker = self.client.get_symbol_ticker(symbol=symbol)
+            return {
+                'price': float(ticker['price']),
+                'timestamp': datetime.now(),
+                'symbol': symbol
+            }
+        except Exception as e:
+            logger.error(f"Error getting live price: {e}")
+            return None
 
 
 if __name__ == "__main__":

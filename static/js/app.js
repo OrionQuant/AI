@@ -23,7 +23,14 @@ async function checkHealth() {
         
         if (data.status === 'healthy') {
             statusDot.classList.add('connected');
-            statusText.textContent = data.model_loaded ? 'Model Loaded' : 'No Model';
+            let statusMsg = data.model_loaded ? 'Model Loaded' : 'No Model';
+            if (data.live_data) {
+                statusMsg += ' • Live Market Data';
+                if (data.data_age_minutes !== null) {
+                    statusMsg += ` (${Math.round(data.data_age_minutes)}m ago)`;
+                }
+            }
+            statusText.textContent = statusMsg;
         } else {
             statusDot.classList.remove('connected');
             statusText.textContent = 'Disconnected';
@@ -74,15 +81,82 @@ async function getPrediction() {
         });
         
         if (!response.ok) {
-            throw new Error('Prediction failed');
+            const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+            const errorMsg = errorData.error || 'Prediction failed';
+            
+            // Check if model is not loaded
+            if (errorMsg.includes('Model not loaded') || errorMsg.includes('train a model')) {
+                // If error response includes current_price, use it
+                if (errorData.current_price) {
+                    document.getElementById('currentPrice').textContent = 
+                        `$${parseFloat(errorData.current_price).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                }
+                if (errorData.timestamp) {
+                    const date = new Date(errorData.timestamp);
+                    document.getElementById('timestamp').textContent = date.toLocaleString();
+                }
+                updatePredictionDisplayNoModel(errorMsg);
+                return;
+            }
+            
+            throw new Error(errorMsg);
         }
         
         const data = await response.json();
         updatePredictionDisplay(data);
     } catch (error) {
         console.error('Prediction error:', error);
-        showError('Failed to get prediction');
+        showError(error.message || 'Failed to get prediction');
+        // Update UI to show error state
+        document.getElementById('signalText').textContent = 'Error';
+        document.getElementById('confidenceText').textContent = error.message || 'Failed to load';
     }
+}
+
+// Update prediction display when model is not loaded
+async function updatePredictionDisplayNoModel(errorMsg) {
+    const signalDisplay = document.getElementById('signalDisplay');
+    const signalIcon = document.getElementById('signalIcon');
+    const signalText = document.getElementById('signalText');
+    const confidenceText = document.getElementById('confidenceText');
+    const expectedReturn = document.getElementById('expectedReturn');
+    
+    signalDisplay.className = 'signal-display hold';
+    signalIcon.textContent = '⚠️';
+    signalText.textContent = 'Model Not Loaded';
+    confidenceText.textContent = 'Train a model first to get predictions';
+    confidenceText.style.color = '#f59e0b';
+    expectedReturn.textContent = 'N/A';
+    
+    // Clear probabilities
+    document.getElementById('buyProb').textContent = '0%';
+    document.getElementById('holdProb').textContent = '0%';
+    document.getElementById('sellProb').textContent = '0%';
+    document.getElementById('buyBar').style.width = '0%';
+    document.getElementById('holdBar').style.width = '0%';
+    document.getElementById('sellBar').style.width = '0%';
+    
+    // Try to get current price from the error response or data endpoint
+    try {
+        const symbol = document.getElementById('symbolSelect').value;
+        const response = await fetch(`/api/data/latest?symbol=${symbol}&timeframe=5m&limit=1`);
+        if (response.ok) {
+            const data = await response.json();
+            if (data.data && data.data.length > 0) {
+                const price = parseFloat(data.data[0].close);
+                document.getElementById('currentPrice').textContent = `$${price.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                if (data.data[0].timestamp) {
+                    const date = new Date(data.data[0].timestamp);
+                    document.getElementById('timestamp').textContent = date.toLocaleString();
+                }
+            }
+        }
+    } catch (e) {
+        console.log('Could not fetch current price');
+    }
+    
+    // Show helpful message
+    showInfo('To get predictions, train a model first: python train_main.py --model-type Transformer --backtest');
 }
 
 // Update prediction display
@@ -118,7 +192,32 @@ function updatePredictionDisplay(data) {
     
     if (data.timestamp) {
         const date = new Date(data.timestamp);
-        timestamp.textContent = date.toLocaleString();
+        const now = new Date();
+        const ageMs = now - date;
+        const ageMinutes = Math.floor(ageMs / 60000);
+        const ageHours = Math.floor(ageMinutes / 60);
+        
+        // Check if this is live data
+        const isLive = data.is_live || ageMinutes < 2;
+        
+        let timeText;
+        if (isLive || ageMinutes < 1) {
+            timeText = '🟢 LIVE';
+            timestamp.style.color = '#10b981';
+            timestamp.style.fontWeight = '600';
+        } else if (ageMinutes < 60) {
+            timeText = `${ageMinutes} minute${ageMinutes > 1 ? 's' : ''} ago`;
+            timestamp.style.color = ageMinutes < 10 ? '#10b981' : '#f59e0b';
+        } else if (ageHours < 24) {
+            timeText = `${ageHours} hour${ageHours > 1 ? 's' : ''} ago`;
+            timestamp.style.color = '#f59e0b';
+        } else {
+            const ageDays = Math.floor(ageHours / 24);
+            timeText = `${ageDays} day${ageDays > 1 ? 's' : ''} ago`;
+            timestamp.style.color = '#ef4444';
+        }
+        
+        timestamp.textContent = `${date.toLocaleString()} ${isLive ? '🟢 LIVE' : `(${timeText})`}`;
     }
     
     // Update probability bars
@@ -240,6 +339,13 @@ async function updatePriceChart() {
         const timeframe = document.getElementById('timeframeSelect').value;
         
         const response = await fetch(`/api/data/latest?symbol=${symbol}&timeframe=${timeframe}&limit=100`);
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: 'Failed to load chart data' }));
+            console.warn('Chart data error:', errorData.error);
+            return; // Don't show error for chart, just skip update
+        }
+        
         const data = await response.json();
         
         if (data.data && data.data.length > 0) {
@@ -255,6 +361,7 @@ async function updatePriceChart() {
         }
     } catch (error) {
         console.error('Chart update error:', error);
+        // Silently fail for chart updates to avoid spamming errors
     }
 }
 
@@ -284,7 +391,8 @@ async function runBacktest() {
         });
         
         if (!response.ok) {
-            throw new Error('Backtest failed');
+            const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+            throw new Error(errorData.error || 'Backtest failed');
         }
         
         const results = await response.json();
@@ -292,6 +400,8 @@ async function runBacktest() {
     } catch (error) {
         console.error('Backtest error:', error);
         showError('Backtest failed: ' + error.message);
+        // Hide results on error
+        document.getElementById('backtestResults').style.display = 'none';
     } finally {
         btn.disabled = false;
         btn.textContent = 'Run Backtest';
@@ -339,7 +449,32 @@ function startAutoRefresh() {
 
 // Show error
 function showError(message) {
-    // Simple error display - can be enhanced
-    alert(message);
+    // Create a more user-friendly error notification
+    const errorDiv = document.createElement('div');
+    errorDiv.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #ef4444; color: white; padding: 15px 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); z-index: 10000; max-width: 400px;';
+    errorDiv.innerHTML = `<strong>Error:</strong> ${message}`;
+    document.body.appendChild(errorDiv);
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        errorDiv.style.transition = 'opacity 0.3s';
+        errorDiv.style.opacity = '0';
+        setTimeout(() => errorDiv.remove(), 300);
+    }, 5000);
+}
+
+// Show info message
+function showInfo(message) {
+    const infoDiv = document.createElement('div');
+    infoDiv.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #3b82f6; color: white; padding: 15px 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); z-index: 10000; max-width: 400px;';
+    infoDiv.innerHTML = `<strong>Info:</strong> ${message}`;
+    document.body.appendChild(infoDiv);
+    
+    // Auto-remove after 8 seconds
+    setTimeout(() => {
+        infoDiv.style.transition = 'opacity 0.3s';
+        infoDiv.style.opacity = '0';
+        setTimeout(() => infoDiv.remove(), 300);
+    }, 8000);
 }
 
